@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Qarzhy — Фокус</title><rect width="512" height="512" rx="112" fill="#b5f36b"/><g transform="translate(117.76 117.76) scale(2.7648)">
+  
+  <circle cx="45" cy="45" r="35" fill="none" stroke="#08110f" stroke-width="14"/>
+  <path d="M 65 65 L 90 90" stroke="#08110f" stroke-width="14" stroke-linecap="square"/>
+  <circle cx="45" cy="45" r="8" fill="#08110f"/>
+</g></svg>

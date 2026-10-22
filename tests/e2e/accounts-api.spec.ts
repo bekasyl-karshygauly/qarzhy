@@ -1,0 +1,84 @@
+import {test,expect,type APIRequestContext} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+const origin='http://127.0.0.1:3100';
+const password='Accounts-test-only-password-624!';
+const day='2026-10-22';
+test('accounts: exact balances, transfer idempotency, ownership, archive, search and cascade',async({playwright})=>{
+  const a=await playwright.request.newContext({baseURL:origin,extraHTTPHeaders:{Origin:origin}});
+  const b=await playwright.request.newContext({baseURL:origin,extraHTTPHeaders:{Origin:origin}});
+  const anon=await playwright.request.newContext({baseURL:origin});
+  let registeredA=false,registeredB=false;
+  try{
+    for(const [client,name] of [[a,'Счета A'],[b,'Счета B']] as const){
+      const result=await client.post('/api/auth/register',{data:{name,email:`${randomUUID()}@example.invalid`,password,consent:true}});
+      expect(result.status()).toBe(201);if(client===a)registeredA=true;else registeredB=true;
+    }
+    expect((await anon.get('/api/accounts')).status()).toBe(401);
+    const createId=randomUUID();const createBody={name:'Наличные API',kind:'cash',opening:'1000.01',requestId:createId};
+    const created=await a.post('/api/accounts',{data:createBody});expect(created.status()).toBe(201);const cash=await created.json();
+    const replay=await a.post('/api/accounts',{data:createBody});expect((await replay.json()).id).toBe(cash.id);
+    expect((await a.post('/api/accounts',{data:{...createBody,opening:'900'}})).status()).toBe(409);
+    const card=await(await a.post('/api/accounts',{data:{name:'Карта API',kind:'card',opening:'200.02'}})).json();
+    const foreign=await(await b.post('/api/accounts',{data:{name:'Чужой счёт',kind:'deposit',opening:'77'}})).json();
+    const base={type:'income',amount:'100.01',category:'Зарплата',date:day,note:'Старая запись',requestId:randomUUID()};
+    expect((await a.post('/api/transactions',{data:base})).status()).toBe(201);
+    expect((await a.post('/api/transactions',{data:{...base,requestId:randomUUID(),amount:'500.55',accountId:cash.id,note:'Доход на кошелёк'}})).status()).toBe(201);
+    const expenseBody={type:'expense',amount:'10.23',category:'Продукты',date:day,note:'Молоко API',requestId:randomUUID(),accountId:card.id};
+    const expense=await(await a.post('/api/transactions',{data:expenseBody})).json();
+    const before=await(await a.get('/api/accounts')).json();expect(before.totalBalanceMinor).toBe('179036');expect(before.unassignedBalanceMinor).toBe('10001');
+    expect(before.items.find((item:{id:string})=>item.id===cash.id).balanceMinor).toBe('150056');
+    const transferBody={fromAccountId:cash.id,toAccountId:card.id,amount:'100.11',date:day,note:'Один перевод',requestId:randomUUID()};
+    const concurrent=await Promise.all([a.post('/api/transfers',{data:transferBody}),a.post('/api/transfers',{data:transferBody})]);
+    expect(concurrent.map(result=>result.status())).toEqual([201,201]);
+    const transfers=await(await a.get('/api/transfers')).json();expect(transfers.total).toBe(1);
+    expect((await a.post('/api/transfers',{data:{...transferBody,amount:'100.12'}})).status()).toBe(409);
+    const after=await(await a.get('/api/accounts')).json();expect(after.totalBalanceMinor).toBe('179036');
+    expect(after.items.find((item:{id:string})=>item.id===cash.id).balanceMinor).toBe('140045');
+    expect(after.items.find((item:{id:string})=>item.id===card.id).balanceMinor).toBe('28990');
+    const summary=await(await a.get('/api/summary?month=2026-10')).json();expect(summary.income).toBe('60056');expect(summary.expense).toBe('1023');expect(summary.balance).toBe('59033');expect(summary.count).toBe(3);
+    expect((await a.patch(`/api/accounts/${cash.id}`,{data:{opening:'1100.01'}})).status()).toBe(200);
+    expect((await(await a.get('/api/accounts')).json()).totalBalanceMinor).toBe('189036');
+    expect((await(await a.get('/api/summary?month=2026-10')).json()).balance).toBe('59033');
+    expect((await b.patch(`/api/accounts/${cash.id}`,{data:{name:'Чужое изменение'}})).status()).toBe(404);
+    expect((await b.delete(`/api/transfers/${transfers.items[0].id}`)).status()).toBe(404);
+    expect((await a.post('/api/transactions',{data:{...base,accountId:foreign.id,requestId:randomUUID()}})).status()).toBe(404);
+    expect((await a.post('/api/transfers',{data:{...transferBody,toAccountId:foreign.id,requestId:randomUUID()}})).status()).toBe(404);
+    expect((await a.get(`/api/transactions?all=1&accountId=${foreign.id}`)).status()).toBe(404);
+    expect((await a.post('/api/transfers',{data:{...transferBody,toAccountId:cash.id,requestId:randomUUID()}})).status()).toBe(400);
+    expect((await a.post('/api/accounts',{headers:{Origin:'https://evil.invalid'},data:{name:'CSRF',kind:'cash',opening:'0'}})).status()).toBe(403);
+    expect((await a.patch(`/api/accounts/${card.id}`,{data:{archived:true}})).status()).toBe(200);
+    expect((await a.post('/api/transactions',{data:{...expenseBody,requestId:randomUUID()}})).status()).toBe(400);
+    expect((await a.post('/api/transfers',{data:{...transferBody,requestId:randomUUID()}})).status()).toBe(400);
+    const edit={type:'expense',amount:'10.23',category:'Продукты',date:day,note:'Молоко API'};
+    expect((await a.patch(`/api/transactions/${expense.id}`,{data:edit})).status()).toBe(200);
+    let result=await(await a.get(`/api/transactions?all=1&q=${encodeURIComponent('МОЛОКО')}`)).json();expect(result.total).toBe(1);expect(result.items[0].accountId).toBe(card.id);
+    expect((await a.patch(`/api/transactions/${expense.id}`,{data:{...edit,accountId:card.id}})).status()).toBe(200);
+    expect((await a.patch(`/api/accounts/${card.id}`,{data:{archived:false}})).status()).toBe(200);
+    const filtered=new URLSearchParams({all:'1',q:'молоко',type:'expense',category:'Продукты',accountId:card.id,from:day,to:day,min:'0',max:'10.23'});
+    result=await(await a.get(`/api/transactions?${filtered}`)).json();expect(result.total).toBe(1);
+    for(const literal of ['%','_','\\'])expect((await(await a.get(`/api/transactions?all=1&q=${encodeURIComponent(literal)}`)).json()).total).toBe(0);
+    expect((await(await a.get('/api/transactions?all=1&accountId=unassigned')).json()).total).toBe(1);
+    for(const query of ['min=11&max=10','from=2026-10-23&to=2026-10-22','from=2026-02-30','type=transfer','all=2',`q=${'x'.repeat(101)}`])expect((await a.get(`/api/transactions?${query}`)).status()).toBe(400);
+    expect((await a.patch(`/api/transactions/${expense.id}`,{data:{...edit,accountId:null}})).status()).toBe(200);
+    expect((await(await a.get(`/api/transactions?all=1&q=${encodeURIComponent('Молоко')}`)).json()).items[0].accountId).toBeNull();
+    expect((await a.patch(`/api/transactions/${expense.id}`,{data:{...edit,accountId:card.id}})).status()).toBe(200);
+    const {requestId:_unused,...foreignImport}=expenseBody;
+    expect((await a.post('/api/import',{data:{rows:[foreignImport]}})).status()).toBe(400);
+    const rows=Array.from({length:51},(_,index)=>({type:'expense',amount:'0.01',category:'Другое',date:'2026-09-20',note:`Страница ${index}`}));
+    expect((await a.post('/api/import',{data:{rows}})).status()).toBe(200);
+    const pageOne=await(await a.get(`/api/transactions?all=1&q=${encodeURIComponent('Страница')}`)).json();
+    const pageTwo=await(await a.get(`/api/transactions?all=1&q=${encodeURIComponent('Страница')}&page=2`)).json();
+    expect(pageOne.total).toBe(51);expect(pageOne.items).toHaveLength(50);expect(pageTwo.items).toHaveLength(1);expect(pageTwo.items[0].accountId).toBeNull();
+    expect((await(await a.get(`/api/transactions?month=2026-10&q=${encodeURIComponent('Страница')}`)).json()).total).toBe(0);
+    const exported=await(await a.get('/api/export')).json();expect(exported.accounts).toHaveLength(2);expect(exported.transfers).toHaveLength(1);expect(exported.transactions).toHaveLength(54);
+    expect((await(await b.get('/api/accounts')).json()).items).toHaveLength(1);expect((await(await b.get('/api/transfers')).json()).total).toBe(0);
+    // Keep a live transfer and assigned transaction to exercise composite-FK cascade.
+    expect((await a.delete('/api/account',{data:{password,confirmation:'УДАЛИТЬ'}})).status()).toBe(200);registeredA=false;
+    expect((await a.get('/api/accounts')).status()).toBe(401);
+    expect((await(await b.get('/api/accounts')).json()).items[0].name).toBe('Чужой счёт');
+  }finally{
+    if(registeredA)expect((await a.delete('/api/account',{data:{password,confirmation:'УДАЛИТЬ'}})).status()).toBe(200);
+    if(registeredB)expect((await b.delete('/api/account',{data:{password,confirmation:'УДАЛИТЬ'}})).status()).toBe(200);
+    await Promise.all([a.dispose(),b.dispose(),anon.dispose()]);
+  }
+});

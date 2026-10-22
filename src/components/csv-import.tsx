@@ -1,0 +1,22 @@
+'use client';
+import {useState} from 'react';
+import {mapCsv, parseCsv, type CsvMapping} from '@/lib/csv';
+import {api, ErrorMessage} from './ui';
+const labels:Record<keyof CsvMapping,string>={date:'Дата',amount:'Сумма',type:'Тип',category:'Категория',note:'Заметка'};
+const aliases:Record<keyof CsvMapping,string[]>={date:['дата','date'],amount:['сумма','amount'],type:['тип','type'],category:['категория','category'],note:['заметка','note','описание','description']};
+export function CsvImport({onSaved}:{onSaved:()=>Promise<void>}) {
+  const [table,setTable]=useState<string[][]|null>(null);const [mapping,setMapping]=useState<CsvMapping>({date:'',amount:'',type:'',category:'',note:''});const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [result,setResult]=useState('');const [confirmed,setConfirmed]=useState(false);
+  const preview=table?mapCsv(table,mapping):null;
+  return <section className="panel csv-import"><h2>Импорт выписки CSV</h2><p className="muted">Только тенге. UTF-8, разделитель «;» или «,», до 500 строк и 500 КБ. Сначала выберите столбцы и проверьте записи.</p><a className="text-button" href="/import-template.csv" download>Скачать шаблон CSV</a>
+    <label className="csv-file">Файл выписки<input type="file" accept=".csv,text/csv" disabled={busy} onChange={async e=>{const file=e.target.files?.[0];setError('');setResult('');setTable(null);setConfirmed(false);if(!file)return;try{if(file.size>500000)throw new Error('Максимальный размер — 500 КБ.');const parsed=parseCsv(await file.text());setTable(parsed);setMapping(Object.fromEntries(Object.keys(labels).map(key=>[key,parsed[0].find(h=>aliases[key as keyof CsvMapping].includes(h.toLowerCase()))||''])) as CsvMapping);}catch(err){setError((err as Error).message);}}}/></label>
+    {table&&preview&&<><div className="csv-mapping">{(Object.keys(labels) as (keyof CsvMapping)[]).map(key=><label key={key}>{labels[key]}{key==='date'||key==='amount'?' *':''}<select disabled={busy} value={mapping[key]} onChange={e=>{setMapping({...mapping,[key]:e.target.value});setConfirmed(false);setResult('');}}><option value="">{key==='category'?'Другое':key==='type'?'По знаку суммы':'Не выбран'}</option>{table[0].map(h=><option key={h}>{h}</option>)}</select></label>)}</div>
+    <p className="notice">Без столбца «Тип»: отрицательная сумма — расход, положительная — доход. Типы: доход / расход или income / expense. Даты: ГГГГ-ММ-ДД или ДД.ММ.ГГГГ. Нераспознанные категории нужно исправить в файле или выбрать «Другое» для всего импорта.</p>
+    <p>Готово: {preview.rows.length}. Ошибок: {preview.errors.length}. Предпросмотр первых 20 записей:</p>
+    {!!preview.errors.length&&<div className="error-message" role="alert">{preview.errors.slice(0,5).map((e,i)=><p key={i}>{e}</p>)}{preview.errors.length>5&&<p>И ещё {preview.errors.length-5} ошибок. Исправьте файл и выберите его заново.</p>}</div>}
+    <div className="table-scroll" tabIndex={0} role="region" aria-label="Предпросмотр CSV"><table><thead><tr><th>Дата</th><th>Тип</th><th>Сумма, ₸</th><th>Категория</th><th>Заметка</th></tr></thead><tbody>{preview.rows.slice(0,20).map((r,i)=><tr key={i}><td>{r.date}</td><td>{r.type==='income'?'Доход':'Расход'}</td><td>{r.amount}</td><td>{r.category}</td><td>{r.note}</td></tr>)}</tbody></table></div>
+    <p className="muted">Повторные записи из прежнего CSV с одинаковыми датой, типом, суммой, категорией и заметкой пропускаются. Совпадения с ручными операциями не проверяются. Импортируйте только выписки без пересечения с ручным учётом.</p>
+    <label className="check-label"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e=>setConfirmed(e.target.checked)}/> Я проверил записи и подтверждаю, что суммы указаны в KZT.</label>
+    <button className="button primary" disabled={busy||!confirmed||!!preview.errors.length||!preview.rows.length||!mapping.date||!mapping.amount} onClick={async()=>{setBusy(true);setError('');try{const r=await api<{imported:number;skipped:number}>('import',{method:'POST',body:JSON.stringify({rows:preview.rows})});setResult(`Добавлено: ${r.imported}. Повторов пропущено: ${r.skipped}.`);setConfirmed(false);await onSaved();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>{busy?'Импортируем…':`Импортировать ${preview.rows.length} записей`}</button></>}
+    <ErrorMessage message={error}/><p role="status" className="success">{result}</p>
+  </section>;
+}

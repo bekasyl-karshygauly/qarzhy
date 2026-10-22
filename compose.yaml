@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: qarzhy
+      POSTGRES_USER: qarzhy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+    volumes:
+      - qarzhy_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qarzhy -d qarzhy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://qarzhy:${POSTGRES_PASSWORD}@postgres:5432/qarzhy?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+  app:
+    build:
+      context: .
+      target: runtime
+    env_file: .env.production
+    environment:
+      DATABASE_URL: postgresql://qarzhy:${POSTGRES_PASSWORD}@postgres:5432/qarzhy?schema=public
+    ports:
+      - "127.0.0.1:3100:3100"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+volumes:
+  qarzhy_data:

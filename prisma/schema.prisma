@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model User {
+  id             String        @id @default(cuid())
+  email          String        @unique
+  name           String
+  passwordHash   String
+  consentVersion String
+  consentAt      DateTime      @default(now())
+  aiConsent      Boolean       @default(false)
+  voiceConsent   Boolean       @default(false)
+  aiConsentAt    DateTime?
+  voiceConsentAt DateTime?
+  providerConsent String?
+  createdAt      DateTime      @default(now())
+  sessions       Session[]
+  transactions   Transaction[]
+  goals          Goal[]
+  budgets        Budget[]
+  recurring      RecurringPayment[]
+  accounts       Account[]
+  transfers      Transfer[]
+  favoriteCategories String[] @default([])
+}
+model Session {
+  tokenHash String   @id
+  userId    String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([expiresAt])
+}
+model Transaction {
+  id          String   @id @default(cuid())
+  userId      String
+  accountId   String?
+  requestId   String
+  type        String
+  amountMinor BigInt
+  category    String
+  note        String   @default("")
+  date        DateTime @db.Date
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     Account? @relation(fields: [accountId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([userId, requestId])
+  @@index([userId, date])
+  @@index([userId, accountId, date])
+}
+model Account {
+  id           String @id @default(cuid())
+  userId       String
+  requestId    String?
+  name         String
+  kind         String
+  openingMinor BigInt @default(0)
+  archived     Boolean @default(false)
+  createdAt    DateTime @default(now())
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  outgoing     Transfer[] @relation("TransferFrom")
+  incoming     Transfer[] @relation("TransferTo")
+  @@unique([id, userId])
+  @@unique([userId, requestId])
+  @@index([userId, archived])
+}
+model Transfer {
+  id            String @id @default(cuid())
+  userId        String
+  fromAccountId String
+  toAccountId   String
+  amountMinor   BigInt
+  date          DateTime @db.Date
+  note          String @default("")
+  requestId     String
+  createdAt     DateTime @default(now())
+  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromAccount   Account @relation("TransferFrom", fields: [fromAccountId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  toAccount     Account @relation("TransferTo", fields: [toAccountId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([userId, requestId])
+  @@index([userId, date])
+  @@index([userId, fromAccountId])
+  @@index([userId, toAccountId])
+}
+model Goal {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  targetMinor BigInt
+  savedMinor  BigInt   @default(0)
+  deadline    DateTime? @db.Date
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+model RateLimit {
+  key       String   @id
+  count     Int      @default(1)
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+model Budget {
+  id String @id @default(cuid())
+  userId String
+  month String
+  category String
+  limitMinor BigInt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, month, category])
+}
+model RecurringPayment {
+  id String @id @default(cuid())
+  userId String
+  name String
+  category String
+  amountMinor BigInt
+  frequency String
+  nextDate DateTime @db.Date
+  anchorDay Int
+  active Boolean @default(true)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, nextDate])
+}
