@@ -6,7 +6,7 @@ import {monthBounds, summarize} from './finance';
 import {assistantContextMode, isGeminiEndpoint} from './ai-provider';
 import {appUrl} from './hosting';
 export class ApiError extends Error { constructor(public status: number, message: string) {super(message);} }
-export const consentVersion = '2026-10-16-v1';
+export {consentVersion} from './privacy';
 const secure = process.env.COOKIE_SECURE === 'true' || appUrl(process.env).startsWith('https://') || process.env.VERCEL === '1';
 const cookieName = secure ? '__Host-qarzhy_session' : 'qarzhy_session';
 export async function currentUser() {

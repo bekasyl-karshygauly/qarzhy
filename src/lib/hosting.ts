@@ -1,5 +1,10 @@
 type HostingEnv = Record<string, string | undefined>;
 
+/** Self-registration is an explicit server setting; unknown values stay closed. */
+export function registrationEnabled(env: HostingEnv) {
+  return env.ALLOW_REGISTRATION === 'true';
+}
+
 /** Exactly one trusted configured/platform origin; never derived from request headers. */
 export function appUrl(env: HostingEnv) {
   if (env.APP_URL?.trim()) return env.APP_URL.trim();
@@ -22,7 +27,7 @@ export function vercelConfigurationErrors(env: HostingEnv) {
     if (url.searchParams.getAll('sslmode').length !== 1 || url.searchParams.get('sslmode') !== 'require' || url.searchParams.getAll('sslaccept').length !== 1 || url.searchParams.get('sslaccept') !== 'strict' || url.searchParams.has('host')) throw new Error();
   } catch {errors.push('DATABASE_URL: configure a remote PostgreSQL URL with sslmode=require and sslaccept=strict.');}
   if (env.COOKIE_SECURE !== 'true') errors.push('COOKIE_SECURE=true is required.');
-  if (env.ALLOW_REGISTRATION !== 'false') errors.push('ALLOW_REGISTRATION=false is required for the closed pilot.');
+  if (env.ALLOW_REGISTRATION !== 'true' && env.ALLOW_REGISTRATION !== 'false') errors.push('ALLOW_REGISTRATION: explicitly set true or false.');
   for (const key of ['DATA_OPERATOR_NAME', 'DATA_OPERATOR_CONTACT']) {
     if (!env[key]?.trim() || /YOUR_|REPLACE_/i.test(env[key]!)) errors.push(`${key}: supply the operator details.`);
   }

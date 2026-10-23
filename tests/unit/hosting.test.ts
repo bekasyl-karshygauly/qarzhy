@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {appUrl, vercelConfigurationErrors} from '../../src/lib/hosting';
+import {appUrl, registrationEnabled, vercelConfigurationErrors} from '../../src/lib/hosting';
 import {validOrigin} from '../../src/lib/security';
 
 const valid = () => ({VERCEL: '1', VERCEL_ENV: 'production', VERCEL_PROJECT_PRODUCTION_URL: 'qarzhy.vercel.app',
@@ -29,8 +29,22 @@ describe('deployment origins keep the existing CSRF boundary', () => {
   });
 });
 
+describe('self-registration setting', () => {
+  it('opens registration only for an explicit true value', () => {
+    expect(registrationEnabled({ALLOW_REGISTRATION: 'true'})).toBe(true);
+  });
+  it.each([undefined, '', 'false', 'TRUE', 'False', '1', '0', 'yes', ' true', 'true ', 'false '])('keeps registration closed for %s', ALLOW_REGISTRATION => {
+    expect(registrationEnabled({ALLOW_REGISTRATION})).toBe(false);
+  });
+});
+
 describe('Vercel configuration preflight', () => {
-  it('accepts a closed pilot without requiring an optional AI provider', () => expect(vercelConfigurationErrors(valid())).toEqual([]));
+  it.each(['false', 'true'])('accepts explicitly configured registration mode %s without an optional AI provider', ALLOW_REGISTRATION => {
+    expect(vercelConfigurationErrors({...valid(), ALLOW_REGISTRATION})).toEqual([]);
+  });
+  it.each([undefined, '', 'TRUE', 'False', '1', '0', 'yes', ' true', 'true ', 'false '])('rejects an unspecified or malformed registration mode: %s', ALLOW_REGISTRATION => {
+    expect(vercelConfigurationErrors({...valid(), ALLOW_REGISTRATION})).toEqual(['ALLOW_REGISTRATION: explicitly set true or false.']);
+  });
   it.each([
     'postgresql://fixture:fixture-password@localhost/qarzhy?sslmode=require&sslaccept=strict',
     'postgresql://fixture:fixture-password@127.0.0.1/qarzhy?sslmode=require&sslaccept=strict',
@@ -45,9 +59,11 @@ describe('Vercel configuration preflight', () => {
     expect(errors.join()).not.toContain('fixture-password');
     expect(errors.join()).not.toContain(DATABASE_URL);
   });
-  it('requires secure cookies, closed registration and operator details', () => {
-    const errors = vercelConfigurationErrors({...valid(), COOKIE_SECURE:'false', ALLOW_REGISTRATION:'true', DATA_OPERATOR_NAME:'', DATA_OPERATOR_CONTACT:''});
-    expect(errors).toHaveLength(4);
+  it('requires secure cookies and operator details in both registration modes', () => {
+    for (const ALLOW_REGISTRATION of ['false', 'true']) {
+      const errors = vercelConfigurationErrors({...valid(), COOKIE_SECURE:'false', ALLOW_REGISTRATION, DATA_OPERATOR_NAME:'', DATA_OPERATOR_CONTACT:''});
+      expect(errors).toEqual(['COOKIE_SECURE=true is required.', 'DATA_OPERATOR_NAME: supply the operator details.', 'DATA_OPERATOR_CONTACT: supply the operator details.']);
+    }
   });
   it('does not let malformed explicit URLs fall through to a valid platform URL', () => {
     expect(vercelConfigurationErrors({...valid(), APP_URL:'https://user:secret@finance.example.kz/'}).some(error => error.startsWith('APP_URL:'))).toBe(true);

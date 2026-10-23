@@ -27,6 +27,9 @@ Canonical owners: navigation and selection state in app.tsx; overview compositio
 ## Verification
 Vitest, TypeScript, production Next build, Playwright CRUD/ownership/export/delete flows, desktop/mobile screenshots. Target visible keyboard focus, contrast and no page overflow at 320px. See `.design/verification.md` for executed evidence and limitations.
 
+## Registration availability
+The server Home reads the shared registrationEnabled flag only after connection() and passes one public boolean through App to Auth. The existing authentication form owns both modes: enabled shows registration/login and an early-access badge; disabled shows login plus an explicit registration-closed notice. No form or consent field for an unavailable registration is presented. Server authorization remains the authority; client visibility never grants permission. Existing Night Capital tokens, Brand, native fields and shared validation/error owners remain unchanged.
+
 ## Planning additions
 Budget and schedule cards use the existing panel, form-stack, native inputs, Modal and validatedSubmit. Shared tokens remain in night.css. QuickExpense, Planning, Comparison and CsvImport extend the selected visual identity; no new theme is introduced. Tables own their bounded horizontal/vertical overflow. Existing desktop sidebar scrolls when new destinations exceed available height.
 

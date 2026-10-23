@@ -8,6 +8,7 @@ import {localToday} from '@/lib/finance';
 import {planningRoute} from '@/lib/planning-server';
 import {accountsRoute, createTransaction, editTransaction, getTransactions} from '@/lib/accounts-server';
 import {createAssistantRequest, sendAssistantRequest} from '@/lib/ai-provider';
+import {registrationEnabled} from '@/lib/hosting';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // Leaves room for the provider's existing shared 45-second deadline and database work.
@@ -21,7 +22,7 @@ async function handle(req: Request, context: Context) {
     if (method !== 'GET') checkOrigin(req);
     if (route === 'health' && method === 'GET') {await db.$queryRaw`SELECT 1`; return json({status: 'ok'});}
     if (route === 'auth/register' && method === 'POST') {
-      if (process.env.ALLOW_REGISTRATION !== 'true') throw new ApiError(403, 'Регистрация закрыта для новых участников.');
+      if (!registrationEnabled(process.env)) throw new ApiError(403, 'Регистрация закрыта для новых участников.');
       await rateLimit('register-global', 30, 3600);
       const input = registerSchema.parse(await readJson(req));
       await rateLimit(`register:${input.email}`, 5, 3600);

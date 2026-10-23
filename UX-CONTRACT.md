@@ -17,6 +17,9 @@ Russian labels and KZT formatting. Month/section state stays local for this priv
 ## Scope
 The redesign preserves domain validation and privacy rules. Forms declare noValidate and explicitly invoke browser validity through the shared validatedSubmit owner. The chat textarea has a stable 140px minimum height and internal text scrolling.
 
+## Registration availability
+ALLOW_REGISTRATION opens registration only for the exact configured value true; absent or malformed values are closed. One shared server helper controls the API and the runtime boolean passed to Auth after Next connection(), rather than a build-time public environment variable. Open mode keeps explicit consent and registration/login tabs. Closed mode has login only and explains that new accounts are unavailable; existing accounts can still sign in. Auth tabs and submit are disabled while submitting, error feedback remains beside the form, and registration never enables AI or voice permissions. The displayed privacy-policy version and newly stored consent version share lib/privacy.ts. Deployment approval and data-hosting readiness remain separate from this runtime switch.
+
 ## Planning workflow contract
 Planning forms reuse ui.tsx Modal/ErrorMessage/validatedSubmit and native category/date controls. Successful writes reload owner-scoped data and announce success. Errors retain the current form. Deletion and recurring expense recording require the shared confirmation dialog. Record payment is accounting only and advances exactly one occurrence. CSV requires preview plus explicit KZT confirmation; any invalid row blocks the entire import. Favorite categories are account data, never localStorage. Budget warnings are derived from current expenses and remain visible in Overview. PWA does not cache private data; offline writes are unavailable.
 
